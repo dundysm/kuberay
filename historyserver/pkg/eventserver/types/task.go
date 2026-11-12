@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -459,8 +460,13 @@ func (f *FunctionDescriptor) CallString() string {
 		functionName = f.JavaFunctionDescriptor.FunctionName
 	}
 	if f.PythonFunctionDescriptor != nil {
+		// Python descriptors carry __qualname__ values (e.g. "main.<locals>.work" for a
+		// nested function), and Ray only keeps the part after the last dot of each.
 		className = f.PythonFunctionDescriptor.ClassName
-		functionName = f.PythonFunctionDescriptor.FunctionName
+		functionName = lastDottedPart(f.PythonFunctionDescriptor.FunctionName)
+		if className != "" {
+			className = lastDottedPart(className)
+		}
 	}
 	if f.CppFunctionDescriptor != nil {
 		className = f.CppFunctionDescriptor.ClassName
@@ -471,4 +477,10 @@ func (f *FunctionDescriptor) CallString() string {
 		return functionName
 	}
 	return fmt.Sprintf("%s.%s", className, functionName)
+}
+
+// lastDottedPart returns the part of s after its last dot, like Ray's
+// name.substr(name.find_last_of(".") + 1).
+func lastDottedPart(s string) string {
+	return s[strings.LastIndex(s, ".")+1:]
 }

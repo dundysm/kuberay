@@ -1832,7 +1832,10 @@ func (s *ServerHandler) getTaskSummarize(req *restful.Request, resp *restful.Res
 // job and are excluded by the filter before reaching this function.
 // Ref: https://github.com/ray-project/ray/blob/777f37f002c14bd4c587f4d095b85c62690647de/python/ray/dashboard/client/src/service/job.ts
 //
-// Ray API source code: https://github.com/ray-project/ray/blob/777f37f002c14bd4c587f4d095b85c62690647de/python/ray/util/state/common.py#L1035-L1064
+// Tasks are keyed by their task name (set with `.options(name=...)`), falling back to the
+// function name, so tasks with a custom name are grouped under it, as in Ray.
+//
+// Ray API source code: https://github.com/ray-project/ray/blob/b8cb25798baf611c9cbc8b7c2dd79052755e5ae8/python/ray/util/state/common.py#L1066-L1102
 func summarizeTasksByFuncName(tasks []eventtypes.Task) *utils.TaskSummariesByFuncName {
 	summary := make(map[string]*utils.TaskSummaryPerFuncOrClassName)
 	totalTasks := 0
@@ -1840,9 +1843,15 @@ func summarizeTasksByFuncName(tasks []eventtypes.Task) *utils.TaskSummariesByFun
 	totalActorScheduled := 0
 
 	for _, task := range tasks {
-		funcName := task.GetFuncName()
+		// Prefer the task name and fall back to the function name, matching Ray's
+		// `task.get("name") or task.get("func_or_class_name")`.
+		// Ref: https://github.com/ray-project/ray/pull/63820
+		funcName := task.GetTaskName()
 		if funcName == "" {
-			// Skip tasks without a function name. This can happen when we've received
+			funcName = task.GetFuncName()
+		}
+		if funcName == "" {
+			// Skip tasks without a task or function name. This can happen when we've received
 			// a TASK_LIFECYCLE_EVENT but not yet the corresponding TASK_DEFINITION_EVENT,
 			// since only the definition event carries the FunctionDescriptor (TaskFunc/ActorFunc).
 			//

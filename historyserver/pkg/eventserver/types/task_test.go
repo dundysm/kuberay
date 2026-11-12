@@ -58,3 +58,33 @@ func TestTaskLogInfoProtoJSON(t *testing.T) {
 		assert.JSONEq(t, `{"stdoutFile":"worker.out","stderrFile":"worker.err","stdoutStart":"10","stdoutEnd":"20","stderrStart":"30","stderrEnd":"40"}`, string(data))
 	})
 }
+
+func TestCallStringKeepsLastPartOfPythonQualifiedNames(t *testing.T) {
+	python := func(className, functionName string) *FunctionDescriptor {
+		return &FunctionDescriptor{PythonFunctionDescriptor: &PythonFunctionDescriptor{
+			ModuleName:   "__main__",
+			ClassName:    className,
+			FunctionName: functionName,
+		}}
+	}
+	tests := map[string]struct {
+		fd   *FunctionDescriptor
+		want string
+	}{
+		"nil":                   {fd: nil, want: ""},
+		"top-level function":    {fd: python("", "work"), want: "work"},
+		"nested function":       {fd: python("", "main.<locals>.work"), want: "work"},
+		"top-level actor class": {fd: python("Counter", "inc"), want: "Counter.inc"},
+		"nested actor class":    {fd: python("main.<locals>.Counter", "__init__"), want: "Counter.__init__"},
+		// Ray only strips Python names.
+		"java": {
+			fd:   &FunctionDescriptor{JavaFunctionDescriptor: &JavaFunctionDescriptor{ClassName: "io.ray.Counter", FunctionName: "inc"}},
+			want: "io.ray.Counter.inc",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, tc.fd.CallString())
+		})
+	}
+}

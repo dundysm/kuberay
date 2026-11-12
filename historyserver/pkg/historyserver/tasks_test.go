@@ -238,3 +238,39 @@ func TestFormatTaskForResponseTaskLogInfo(t *testing.T) {
 	response = formatTaskForResponse(eventtypes.Task{}, true)
 	assert.Nil(t, response["task_log_info"])
 }
+
+func TestSummarizeTasksByFuncNameGroupsByTaskName(t *testing.T) {
+	pyFunc := func(className, functionName string) *eventtypes.FunctionDescriptor {
+		return &eventtypes.FunctionDescriptor{PythonFunctionDescriptor: &eventtypes.PythonFunctionDescriptor{
+			ClassName:    className,
+			FunctionName: functionName,
+		}}
+	}
+	tasks := []eventtypes.Task{
+		{TaskID: "t1", TaskType: eventtypes.NORMAL_TASK, State: eventtypes.FINISHED, TaskFunc: pyFunc("", "work"), TaskName: "work"},
+		{TaskID: "t2", TaskType: eventtypes.NORMAL_TASK, State: eventtypes.FINISHED, TaskFunc: pyFunc("", "work"), TaskName: "preprocess"},
+		{TaskID: "t3", TaskType: eventtypes.NORMAL_TASK, State: eventtypes.FAILED, TaskFunc: pyFunc("", "work"), TaskName: "preprocess"},
+		{TaskID: "t4", TaskType: eventtypes.ACTOR_TASK, State: eventtypes.FINISHED, ActorFunc: pyFunc("Counter", "inc"), ActorTaskName: "bump"},
+		// Without a task name, fall back to the function name.
+		{TaskID: "t5", TaskType: eventtypes.NORMAL_TASK, State: eventtypes.FINISHED, TaskFunc: pyFunc("", "work")},
+		// Without a task definition event, skip the task.
+		{TaskID: "t6", State: eventtypes.RUNNING},
+	}
+
+	got := summarizeTasksByFuncName(tasks)
+
+	require.Len(t, got.Summary, 3)
+	require.Contains(t, got.Summary, "work")
+	assert.Equal(t, "work", got.Summary["work"].FuncOrClassName)
+	assert.Equal(t, map[string]int{"FINISHED": 2}, got.Summary["work"].StateCounts)
+	require.Contains(t, got.Summary, "preprocess")
+	assert.Equal(t, "preprocess", got.Summary["preprocess"].FuncOrClassName)
+	assert.Equal(t, string(eventtypes.NORMAL_TASK), got.Summary["preprocess"].Type)
+	assert.Equal(t, map[string]int{"FINISHED": 1, "FAILED": 1}, got.Summary["preprocess"].StateCounts)
+	require.Contains(t, got.Summary, "bump")
+	assert.Equal(t, string(eventtypes.ACTOR_TASK), got.Summary["bump"].Type)
+	assert.Equal(t, map[string]int{"FINISHED": 1}, got.Summary["bump"].StateCounts)
+	assert.Equal(t, 4, got.TotalTasks)
+	assert.Equal(t, 1, got.TotalActorTasks)
+	assert.Equal(t, 0, got.TotalActorScheduled)
+}
